@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: fct_reservations
+    description: Central fact table — one row per reservation, with aggregated paid amount.
+    columns:
+      - name: reservation_id
+        tests: [unique, not_null]
+      - name: guest_id
+        tests:
+          - not_null
+          - relationships: {to: ref('dim_guests'), field: guest_id}
+      - name: amount_paid
+        tests: [not_null]
+
+  - name: dim_guests
+    description: One row per guest with booking-activity rollups.
+    columns:
+      - name: guest_id
+        tests: [unique, not_null]
+
+  - name: agg_property_performance
+    description: One row per property with reservation and revenue summary metrics.
+    columns:
+      - name: property_id
+        tests: [unique, not_null]
+      - name: total_revenue
+        tests: [not_null]

@@ -1,0 +1,23 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Airflow
+airflow/logs/
+airflow/airflow.db
+airflow/airflow.cfg
+airflow/webserver_config.py
+
+# Generated data (regenerate via generate_data.py rather than versioning it;
+# comment out if you'd rather keep a sample snapshot committed)
+# data/raw/*.csv
+
+.DS_Store

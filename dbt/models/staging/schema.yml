@@ -1,0 +1,84 @@
+version: 2
+
+models:
+  - name: stg_guests
+    description: One row per guest.
+    columns:
+      - name: guest_id
+        tests: [unique, not_null]
+      - name: first_name
+        tests: [not_null]
+      - name: last_name
+        tests: [not_null]
+
+  - name: stg_properties
+    description: One row per hotel property.
+    columns:
+      - name: property_id
+        tests: [unique, not_null]
+      - name: property_name
+        tests: [not_null]
+
+  - name: stg_rooms
+    description: One row per room, scoped to a property.
+    columns:
+      - name: room_id
+        tests: [unique, not_null]
+      - name: property_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_properties')
+              field: property_id
+      - name: capacity
+        tests: [not_null]
+
+  - name: stg_reservations
+    description: One row per booking record.
+    columns:
+      - name: reservation_id
+        tests: [unique, not_null]
+      - name: guest_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_guests')
+              field: guest_id
+      - name: property_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_properties')
+              field: property_id
+      - name: room_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_rooms')
+              field: room_id
+      - name: booking_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['confirmed', 'cancelled', 'checked_in', 'checked_out', 'no_show', 'pending']
+      - name: check_in_date
+        tests: [not_null]
+
+  - name: stg_payments
+    description: One or more payment records per reservation.
+    columns:
+      - name: payment_id
+        tests: [unique, not_null]
+      - name: reservation_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_reservations')
+              field: reservation_id
+      - name: payment_status
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['paid', 'failed', 'refunded', 'pending']
+      - name: amount
+        tests: [not_null]

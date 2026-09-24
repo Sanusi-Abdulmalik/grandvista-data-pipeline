@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: warehouse
+    description: >
+      Standardized tables produced by the Python transformation/load stage
+      (src/transformation). dbt staging models sit on top of these rather
+      than re-doing the cleaning, so cleaning logic lives in one place;
+      dbt's job here is documentation, lineage, and automated testing.
+    schema: warehouse
+    tables:
+      - name: guests
+      - name: properties
+      - name: rooms
+      - name: reservations
+      - name: payments

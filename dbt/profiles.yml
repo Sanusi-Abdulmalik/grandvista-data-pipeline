@@ -1,0 +1,19 @@
+# dbt connection profile for the GrandVista project.
+# In the Dockerized setup this file's env vars are populated from the
+# same .env used by the rest of the pipeline (see docker-compose.yml).
+#
+# Local usage: copy to ~/.dbt/profiles.yml, or point DBT_PROFILES_DIR
+# at this directory.
+
+grandvista:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | as_number }}"
+      user: "{{ env_var('POSTGRES_USER', 'grandvista') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'grandvista') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'grandvista') }}"
+      schema: warehouse
+      threads: 4

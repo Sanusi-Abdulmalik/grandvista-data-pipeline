@@ -1,0 +1,99 @@
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    # Pipeline-facing env vars, consumed by src/*.py and dbt/profiles.yml
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: ${POSTGRES_DB:-grandvista}
+    POSTGRES_USER: ${POSTGRES_USER:-grandvista}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grandvista}
+    DBT_PROFILES_DIR: /opt/airflow/project/dbt
+  volumes:
+    - ./:/opt/airflow/project
+    - ./airflow/dags:/opt/airflow/dags
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: grandvista_postgres
+    environment:
+      # Two logical databases share this one Postgres instance to keep the
+      # local footprint small: `airflow` for Airflow's own metadata, and
+      # `grandvista` (created via POSTGRES_MULTIPLE_DATABASES below, or
+      # manually — see README) for the actual warehouse.
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+      GRANDVISTA_DB: ${POSTGRES_DB:-grandvista}
+      GRANDVISTA_USER: ${POSTGRES_USER:-grandvista}
+      GRANDVISTA_PASSWORD: ${POSTGRES_PASSWORD:-grandvista}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/schema/schema.sql:/docker-entrypoint-initdb.d/schema.sql.template
+      - ./docker/init-multi-db.sh:/docker-entrypoint-initdb.d/init-multi-db.sh
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 10
+
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: grandvista_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio_data:/data
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: grandvista_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin --password admin \
+          --firstname Admin --lastname User \
+          --role Admin --email admin@grandvista.local
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: grandvista_airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: grandvista_airflow_scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
+  minio_data:
+  airflow_logs:
