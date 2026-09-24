@@ -221,5 +221,3 @@ for a full discussion of what's simplified for this assessment (e.g. no
 incremental/CDC loading, no MinIO write step yet wired into the DAG, single
 Postgres instance hosting both Airflow metadata and the warehouse) and how
 each would be addressed for production/larger data volumes.
-#   g r a n d v i s t a - d a t a - p i p e l i n e  
- 
