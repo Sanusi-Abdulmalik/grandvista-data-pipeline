@@ -130,6 +130,24 @@ This starts:
 - `airflow-webserver` — UI at http://localhost:8080 (`admin` / `admin`)
 - `airflow-scheduler` — executes the DAG
 
+`Dockerfile.airflow` extends the official Airflow image with this project's
+dependencies (`requirements.txt`). Two details matter there and are
+documented inline in the file: it installs `build-essential`/`libpq-dev`
+before the pip install (dbt-postgres needs Postgres's `pg_config` to build
+`psycopg2` from source), and it installs against Airflow's own published
+constraints file rather than plain `requirements.txt` versions — without
+that, pip is free to install a SQLAlchemy/pandas version that satisfies
+this project's dependencies but silently breaks Airflow's own internals.
+That's also why `requirements.txt` leaves `pandas`/`SQLAlchemy` unpinned:
+the constraints file picks the actual compatible version.
+
+First build takes several minutes (compiling `psycopg2` from source and
+installing dbt). If you hit a `docker compose build` error, it's almost
+always a version conflict between something in `requirements.txt` and
+Airflow's constraints file — the error names the conflicting package;
+unpinning that package's version in `requirements.txt` and rebuilding with
+`--no-cache` resolves it.
+
 ## 7. Execution Instructions
 
 **Option A — via Airflow (recommended, matches the intended production flow):**
@@ -142,47 +160,86 @@ This starts:
 
 **Option B — running stages manually (for local development/debugging):**
 
+
+1. Generate the datasets
 ```bash
-# 1. Generate the datasets
 python data/generation/generate_data.py --out-dir data/raw
-
-# 2. Start just Postgres if you're not using the full compose stack
+```
+2. Start just Postgres if you're not using the full compose stack
+```bash
 docker compose up -d postgres
-
-# 3. Ingest raw data
+```
+3. Ingest raw data
+```bash
 python src/ingestion/ingest.py --raw-dir data/raw
-
-# 4. Transform + load into the warehouse
+```
+4. Transform + load into the warehouse
+```bash
 python src/transformation/load.py --raw-dir data/raw
-
-# 5. Run data quality checks (exits non-zero on failure)
+```
+5. Run data quality checks (exits non-zero on failure)
+```bash
 python src/validation/validate.py
-
-# 6. Run dbt models + tests
+```
+6. Run dbt models + tests
+```bash
 cd dbt && dbt deps --profiles-dir . && dbt run --profiles-dir . && dbt test --profiles-dir .
-
-# 7. Access the warehouse
+```
+7. Access the warehouse
+```bash
 psql -h localhost -U grandvista -d grandvista   # password: grandvista (see .env)
 ```
 
-## 8. Data Quality
+## 8. Screenshots
+
+Screenshots of the running stack live in `docs/screenshots/`. :
+
+| File | Shows |
+|---|---|
+| `docs/screenshots/docker.png` | `docker compose ps` — all containers healthy/running |
+| `docs/screenshots/airflow-dag-graph.png` | The DAG graph view in the Airflow UI, all tasks green |
+| `docs/screenshots/postgres-warehouse.png` | The `warehouse.reservations` showing loaded data |
+
+<p align="center">
+  <img src="docs/screenshots/airflow-dag-graph.png" alt="Airflow DAG graph view, all tasks green" width="800"><br>
+  <em>grandvista_hotel_booking_pipeline running end-to-end in Airflow</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/docker.png" alt="docker compose ps output" width="700"><br>
+  <em>All services (Postgres, MinIO, Airflow webserver/scheduler) running via Docker Compose</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/postgres-warehouse.png" alt="Warehouse query results" width="700"><br>
+  <em>Standardized reservation data loaded into warehouse.reservations</em>
+</p>
+
+
+## 9. Data Quality
 
 See `docs/data_quality.md` for the full list of checks and how failures are
 handled. In short: nothing is silently dropped — every record that fails a
 check is written to `warehouse.rejected_records` with a reason, so the
 pipeline's cleaning decisions are fully auditable.
 
-## 9. Testing
+## 10. Testing
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 pytest tests/ -v
 ```
+
+`pytest` is kept in a separate `requirements-dev.txt` rather than
+`requirements.txt`, since it's a local dev/test tool with no reason to be
+installed inside the Airflow image — see `docs/technical_decisions.md` for
+why that split (and the Airflow-image dependency-pinning approach more
+generally) mattered in practice.
 
 25 unit tests cover status/date normalization, required-field enforcement,
 foreign-key validation, and deduplication logic in the transformation layer.
 
-## 10. Repository Structure
+## 11. Repository Structure
 
 ```
 grandvista-data-pipeline/
@@ -204,17 +261,20 @@ grandvista-data-pipeline/
 ├── docs/
 │   ├── architecture.md
 │   ├── data_quality.md
-│   └── data_generation.md
+│   ├── data_generation.md
+│   ├── technical_decisions.md
+│   └── screenshots/             # pipeline run screenshots (see §8)
 ├── tests/test_transform.py
-├── Dockerfile                  # pipeline runtime image
-├── Dockerfile.airflow          # Airflow image + project dependencies
+├── Dockerfile                   # pipeline runtime image
+├── Dockerfile.airflow           # Airflow image + project dependencies
 ├── docker-compose.yml
-├── requirements.txt
+├── requirements.txt              # installed inside the Airflow image
+├── requirements-dev.txt          # local-only tooling (pytest)
 ├── .env.example
 └── .gitignore
 ```
 
-## 11. Limitations & Assumptions
+## 12. Limitations & Assumptions
 
 See `docs/architecture.md` §"Limitations, Assumptions & Extending the Pipeline"
 for a full discussion of what's simplified for this assessment (e.g. no
